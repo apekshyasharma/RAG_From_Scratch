@@ -1,0 +1,30 @@
+[project]
+name = "innovate"
+version = "0.1.0"
+description = "RAG system: PDFs → hybrid retrieval (BM25 + FAISS HNSW) → Gemma (Gemini API)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "faiss-cpu>=1.13.2",
+    "google-genai>=1.61.0",
+    "numpy>=2.4.2",
+    "pymupdf>=1.26.7",
+    "pytest>=9.0.2",
+    "python-dotenv>=1.2.1",
+    "pyyaml>=6.0.3",
+    "rank-bm25>=0.2.2",
+    "regex>=2026.1.15",
+    "requests>=2.32.5",
+    "ruff>=0.14.14",
+    "sentence-transformers>=5.2.2",
+    "tqdm>=4.67.2",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["rag_system", "rag_system.*"]
+namespaces = false

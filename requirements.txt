@@ -1,0 +1,13 @@
+pymupdf
+faiss-cpu
+sentence-transformers
+rank-bm25
+numpy
+tqdm
+pyyaml
+python-dotenv
+google-genai
+requests
+regex
+pytest
+ruff
