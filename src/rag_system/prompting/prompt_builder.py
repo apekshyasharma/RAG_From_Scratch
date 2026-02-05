@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 import os
+import xml.etree.ElementTree as ET
 
 @dataclass
 class PromptTemplates:
@@ -17,9 +18,17 @@ class PromptBuilder:
 
     def _load_templates(self) -> PromptTemplates:
         system_path = self.prompts_dir / "rag_system.txt"
-        user_path = self.prompts_dir / "rag_user_template.txt"
+        user_path = self.prompts_dir / "rag_user_template.xml"  # Changed from .txt
         system = system_path.read_text(encoding="utf-8")
-        user = user_path.read_text(encoding="utf-8")
+        
+        # Parse XML user template
+        tree = ET.parse(user_path)
+        root = tree.getroot()
+        context_template = root.find("context").text or "{context}"
+        question_template = root.find("question").text or "{question}"
+        instructions = root.find("instructions").text or ""
+        
+        user = f"CONTEXT:\n{context_template}\n\nQUESTION:\n{question_template}\n\n{instructions}"
         return PromptTemplates(system=system.strip(), user=user.strip())
 
     def build_context(self, retrieved, max_chars: int = 4500) -> str:

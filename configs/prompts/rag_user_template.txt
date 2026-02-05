@@ -1,7 +1,0 @@
-CONTEXT:
-{context}
-
-QUESTION:
-{question}
-
-Write a clear answer with citations like (PDF, chunk_id).

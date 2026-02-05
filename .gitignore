@@ -11,12 +11,13 @@ wheels/
 # secrets
 .env
 *.env
-.env.*
+.env
 .uv
 
 # Artifacts and generated outputs
 artifacts/
 data/processed/
+
 
 
 

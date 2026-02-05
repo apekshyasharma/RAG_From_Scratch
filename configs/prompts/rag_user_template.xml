@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+    <context>{context}</context>
+    <question>{question}</question>
+    <instructions>Write a clear answer with citations like (PDF, chunk_id).</instructions>
+</prompt>
