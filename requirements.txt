@@ -12,5 +12,9 @@ regex
 pytest
 ruff
 fastapi
-uvicorn
+uvicorn[standard]
 pydantic
+jinja2
+aiofiles
+pydantic-settings
+
