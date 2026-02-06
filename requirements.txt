@@ -11,3 +11,6 @@ requests
 regex
 pytest
 ruff
+fastapi
+uvicorn
+pydantic
