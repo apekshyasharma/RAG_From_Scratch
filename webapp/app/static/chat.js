@@ -1,120 +1,216 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Elements ---
-    const htmlElement = document.documentElement;
-    const chatForm = document.getElementById('chatForm');
-    const messageInput = document.getElementById('messageInput');
-    const chatArea = document.getElementById('chatArea');
-    const themeBtns = document.querySelectorAll('[data-set-theme]');
-    const parallaxBg = document.querySelector('.parallax-bg');
+  const htmlElement = document.documentElement;
+  const chatForm = document.getElementById('chatForm');
+  const messageInput = document.getElementById('messageInput');
+  const chatArea = document.getElementById('chatArea');
+  const themeBtns = document.querySelectorAll('[data-set-theme]');
 
-    // --- State ---
-    let currentTheme = localStorage.getItem('theme') || 'dark';
+  let currentTheme = localStorage.getItem('theme') || 'dark';
+  let isSending = false;
 
-    // --- Initialization ---
-    setTheme(currentTheme);
+  const SESSION_KEY = "rag_session_id";
+  let sessionId = localStorage.getItem(SESSION_KEY);
+  if (!sessionId) {
+    sessionId = (crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).toString();
+    localStorage.setItem(SESSION_KEY, sessionId);
+  }
 
-    // --- Theme Switcher ---
-    themeBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const newTheme = btn.getAttribute('data-set-theme');
-            setTheme(newTheme);
-        });
+  // NEW: pending query waiting for mode selection
+  let pendingQuery = null;
+
+  setTheme(currentTheme);
+
+  themeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const newTheme = btn.getAttribute('data-set-theme');
+      setTheme(newTheme);
+    });
+  });
+
+  function setTheme(theme) {
+    htmlElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    currentTheme = theme;
+  }
+
+  // ---------- SUBMIT HANDLER ----------
+  chatForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = messageInput.value.trim();
+    if (!text || isSending) return;
+
+    // Add user message immediately
+    addMessage(text, 'user');
+    messageInput.value = '';
+
+    // NEW: Instead of answering immediately, ask for chunking strategy
+    pendingQuery = text;
+    addChunkingChoiceMessage();
+  });
+
+  // ---------- BACKEND CALL ----------
+  async function callBackend(message, mode) {
+    const res = await fetch("/api/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, message, mode })
     });
 
-    function setTheme(theme) {
-        htmlElement.setAttribute('data-theme', theme);
-        localStorage.setItem('theme', theme);
-        currentTheme = theme;
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errText}`);
     }
+    return await res.json();
+  }
 
-    // --- Parallax Effect ---
-    // Optimizing with requestAnimationFrame to prevent jank
-    let mouseX = 0.5;
-    let mouseY = 0.5;
-    let targetMouseX = 0.5;
-    let targetMouseY = 0.5;
+  // ---------- MODE CHOICE UI ----------
+  function addChunkingChoiceMessage() {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'bot');
 
-    window.addEventListener('mousemove', (e) => {
-        // Normalize mouse position (0 to 1)
-        targetMouseX = e.clientX / window.innerWidth;
-        targetMouseY = e.clientY / window.innerHeight;
+    const bubble = document.createElement('div');
+    bubble.classList.add('bubble');
+
+    bubble.innerHTML = `
+      <div style="font-weight:600; margin-bottom:8px;">Choose a chunking strategy for retrieval:</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="mode-btn" data-mode="fixed">Fixed-size (overlap)</button>
+        <button class="mode-btn" data-mode="semantic">Semantic (sections + overlap)</button>
+        <button class="mode-btn" data-mode="auto">Auto (system decides)</button>
+      </div>
+      <div style="opacity:.75; margin-top:8px; font-size:12px;">
+        Fixed is best for exact quotes/formulas, Semantic is best for sections/ideas.
+      </div>
+    `;
+
+    messageDiv.appendChild(bubble);
+    chatArea.appendChild(messageDiv);
+    scrollToBottom();
+
+    // Attach button listeners
+    bubble.querySelectorAll(".mode-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const mode = btn.dataset.mode;
+        await handleModeSelection(mode, messageDiv);
+      });
     });
+  }
 
-    function updateParallax() {
-        // Smooth interpolation
-        mouseX += (targetMouseX - mouseX) * 0.1;
-        mouseY += (targetMouseY - mouseY) * 0.1;
+  async function handleModeSelection(mode, choiceMessageDiv) {
+    if (!pendingQuery) return;
 
-        htmlElement.style.setProperty('--mouse-x', mouseX);
-        htmlElement.style.setProperty('--mouse-y', mouseY);
+    // Disable all buttons to prevent double click
+    choiceMessageDiv.querySelectorAll(".mode-btn").forEach(b => b.disabled = true);
 
-        requestAnimationFrame(updateParallax);
+    // Add a small confirmation line (optional)
+    const bubble = choiceMessageDiv.querySelector(".bubble");
+    const confirm = document.createElement("div");
+    confirm.style.marginTop = "10px";
+    confirm.style.opacity = "0.85";
+    confirm.innerHTML = `✅ Selected: <b>${escapeHtml(mode)}</b>. Retrieving...`;
+    bubble.appendChild(confirm);
+
+    // Add assistant typing placeholder
+    const typingEl = addTypingMessage();
+    setSendingState(true);
+
+    try {
+      const data = await callBackend(pendingQuery, mode);
+
+      replaceTypingWithAnswer(typingEl, data.answer);
+      appendModeUsed(typingEl, data.mode_used);
+
+    } catch (err) {
+      replaceTypingWithError(typingEl, err);
+    } finally {
+      setSendingState(false);
+      pendingQuery = null;
     }
+  }
 
-    updateParallax();
+  function setSendingState(on) {
+    isSending = on;
+    messageInput.disabled = on;
+    chatForm.querySelector("button[type='submit']").disabled = on;
+    if (!on) messageInput.focus();
+  }
 
-    // --- Chat Logic ---
-    chatForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const text = messageInput.value.trim();
-        if (!text) return;
+  // ---------- UI HELPERS ----------
+  function addMessage(text, sender) {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', sender);
 
-        // 1. Add User Message
-        addMessage(text, 'user');
-        messageInput.value = '';
+    const bubble = document.createElement('div');
+    bubble.classList.add('bubble');
+    bubble.innerHTML = parseMarkdown(text);
 
-        // 2. Simulate Bot Response
-        setTimeout(() => {
-            const botResponse = generateBotResponse(text);
-            addMessage(botResponse, 'bot');
-        }, 600);
-    });
+    messageDiv.appendChild(bubble);
+    chatArea.appendChild(messageDiv);
+    scrollToBottom();
+    return messageDiv;
+  }
 
-    function addMessage(text, sender) {
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message', sender);
+  function addTypingMessage() {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'bot');
 
-        const bubble = document.createElement('div');
-        bubble.classList.add('bubble');
+    const bubble = document.createElement('div');
+    bubble.classList.add('bubble');
+    bubble.innerHTML = `
+      <span style="opacity:.8">Retrieving & generating</span>
+      <span class="typing-dots" aria-label="typing">
+        <span>.</span><span>.</span><span>.</span>
+      </span>
+    `;
+    messageDiv.appendChild(bubble);
+    chatArea.appendChild(messageDiv);
+    scrollToBottom();
+    return messageDiv;
+  }
 
-        // Render Markdown
-        bubble.innerHTML = parseMarkdown(text);
+  function replaceTypingWithAnswer(typingMessageDiv, answerText) {
+    const bubble = typingMessageDiv.querySelector('.bubble');
+    bubble.innerHTML = parseMarkdown(answerText);
+    scrollToBottom();
+  }
 
-        messageDiv.appendChild(bubble);
-        chatArea.appendChild(messageDiv);
+  function appendModeUsed(typingMessageDiv, modeUsed) {
+    if (!modeUsed) return;
+    const bubble = typingMessageDiv.querySelector('.bubble');
+    const meta = document.createElement("div");
+    meta.style.opacity = "0.7";
+    meta.style.fontSize = "12px";
+    meta.style.marginTop = "8px";
+    meta.textContent = `Mode used: ${modeUsed}`;
+    bubble.appendChild(meta);
+  }
 
-        // Auto-scroll
-        chatArea.scrollTop = chatArea.scrollHeight;
-    }
+  function replaceTypingWithError(typingMessageDiv, err) {
+    const bubble = typingMessageDiv.querySelector('.bubble');
+    bubble.innerHTML = `
+      <b style="color:#ff8080">Error:</b>
+      <span style="color:#ffb3b3">${escapeHtml(String(err?.message || err))}</span>
+    `;
+    scrollToBottom();
+  }
 
-    function parseMarkdown(text) {
-        // Escape HTML to prevent XSS (basic)
-        let safeText = text.replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
+  function scrollToBottom() {
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
 
-        // Bold: **text**
-        safeText = safeText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+  function parseMarkdown(text) {
+    let safeText = escapeHtml(text);
+    safeText = safeText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    safeText = safeText.replace(/`(.*?)`/g, '<code>$1</code>');
+    return safeText;
+  }
 
-        // Code: `text`
-        safeText = safeText.replace(/`(.*?)`/g, '<code>$1</code>');
-
-        return safeText;
-    }
-
-    function generateBotResponse(userText) {
-        const lowerText = userText.toLowerCase();
-        if (lowerText.includes('hello') || lowerText.includes('hi')) {
-            return 'Hello there! Try switching the **theme**!';
-        }
-        if (lowerText.includes('theme')) {
-            return 'I like `purple` the best. What about you?';
-        }
-        if (lowerText.includes('code')) {
-            return 'Here is some code: `console.log("Hello World")`';
-        }
-        return `You said: ${userText}`;
-    }
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
 });
