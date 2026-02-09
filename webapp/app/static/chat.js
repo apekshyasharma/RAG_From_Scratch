@@ -15,8 +15,11 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem(SESSION_KEY, sessionId);
   }
 
-  // NEW: pending query waiting for mode selection
+  // pending query waiting for mode selection
   let pendingQuery = null;
+
+  // Track current active SSE stream (so we can stop/cleanup if needed)
+  let activeEventSource = null;
 
   setTheme(currentTheme);
 
@@ -43,13 +46,14 @@ document.addEventListener('DOMContentLoaded', () => {
     addMessage(text, 'user');
     messageInput.value = '';
 
-    // NEW: Instead of answering immediately, ask for chunking strategy
+    // Ask for chunking strategy
     pendingQuery = text;
     addChunkingChoiceMessage();
   });
 
-  // ---------- BACKEND CALL ----------
-  async function callBackend(message, mode) {
+  // ---------- BACKEND CALL (Step 3) ----------
+  // POST /api/message now returns { session_id, request_id }
+  async function callBackendForRequestId(message, mode) {
     const res = await fetch("/api/message", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -60,7 +64,66 @@ document.addEventListener('DOMContentLoaded', () => {
       const errText = await res.text();
       throw new Error(`HTTP ${res.status}: ${errText}`);
     }
-    return await res.json();
+    return await res.json(); // { session_id, request_id }
+  }
+
+  // ---------- SSE STREAM ----------
+  // GET /api/stream?session_id=...&request_id=...
+  function openSSEStream(requestId, typingMessageDiv) {
+    return new Promise((resolve, reject) => {
+      // Close any existing stream
+      if (activeEventSource) {
+        try { activeEventSource.close(); } catch {}
+        activeEventSource = null;
+      }
+
+      const url =
+        `/api/stream?session_id=${encodeURIComponent(sessionId)}` +
+        `&request_id=${encodeURIComponent(requestId)}`;
+
+      const es = new EventSource(url);
+      activeEventSource = es;
+
+      const bubble = typingMessageDiv.querySelector('.bubble');
+      bubble.textContent = ""; // prepare for streaming (use textContent for speed)
+      let acc = "";
+
+      const closeStream = () => {
+        try { es.close(); } catch {}
+        if (activeEventSource === es) activeEventSource = null;
+      };
+
+      es.addEventListener("token", (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          const piece = data.text || "";
+          acc += piece;
+          // Use textContent for instant rendering during streaming
+          bubble.textContent = acc;
+          scrollToBottom();
+        } catch {
+          // ignore malformed event chunk
+        }
+      });
+
+      es.addEventListener("done", (ev) => {
+        closeStream();
+        // After done, apply markdown formatting once
+        bubble.innerHTML = parseMarkdown(acc);
+        try {
+          const data = JSON.parse(ev.data);
+          if (data?.mode_used) appendModeUsed(typingMessageDiv, data.mode_used);
+        } catch {}
+        scrollToBottom();
+        resolve();
+      });
+
+      // EventSource "error" sometimes fires on disconnect. Treat as failure.
+      es.addEventListener("error", () => {
+        closeStream();
+        reject(new Error("Streaming failed or connection dropped."));
+      });
+    });
   }
 
   // ---------- MODE CHOICE UI ----------
@@ -74,9 +137,9 @@ document.addEventListener('DOMContentLoaded', () => {
     bubble.innerHTML = `
       <div style="font-weight:600; margin-bottom:8px;">Choose a chunking strategy for retrieval:</div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="mode-btn" data-mode="fixed">Fixed-size (overlap)</button>
-        <button class="mode-btn" data-mode="semantic">Semantic (sections + overlap)</button>
-        <button class="mode-btn" data-mode="auto">Auto (system decides)</button>
+        <button class="mode-btn" data-mode="fixed" type="button">Fixed-size (overlap)</button>
+        <button class="mode-btn" data-mode="semantic" type="button">Semantic (sections + overlap)</button>
+        <button class="mode-btn" data-mode="auto" type="button">Auto (system decides)</button>
       </div>
       <div style="opacity:.75; margin-top:8px; font-size:12px;">
         Fixed is best for exact quotes/formulas, Semantic is best for sections/ideas.
@@ -87,7 +150,6 @@ document.addEventListener('DOMContentLoaded', () => {
     chatArea.appendChild(messageDiv);
     scrollToBottom();
 
-    // Attach button listeners
     bubble.querySelectorAll(".mode-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
         const mode = btn.dataset.mode;
@@ -96,29 +158,30 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ---------- UPDATED for Step 3 Streaming ----------
   async function handleModeSelection(mode, choiceMessageDiv) {
     if (!pendingQuery) return;
 
-    // Disable all buttons to prevent double click
+    // Disable buttons to prevent double click
     choiceMessageDiv.querySelectorAll(".mode-btn").forEach(b => b.disabled = true);
 
-    // Add a small confirmation line (optional)
     const bubble = choiceMessageDiv.querySelector(".bubble");
     const confirm = document.createElement("div");
     confirm.style.marginTop = "10px";
     confirm.style.opacity = "0.85";
-    confirm.innerHTML = `✅ Selected: <b>${escapeHtml(mode)}</b>. Retrieving...`;
+    confirm.innerHTML = `✅ Selected: <b>${escapeHtml(mode)}</b>. Streaming response...`;
     bubble.appendChild(confirm);
 
-    // Add assistant typing placeholder
+    // Assistant typing placeholder
     const typingEl = addTypingMessage();
     setSendingState(true);
 
     try {
-      const data = await callBackend(pendingQuery, mode);
+      // 1) Get request_id from backend
+      const data = await callBackendForRequestId(pendingQuery, mode);
 
-      replaceTypingWithAnswer(typingEl, data.answer);
-      appendModeUsed(typingEl, data.mode_used);
+      // 2) Open SSE stream and render tokens into the same assistant bubble
+      await openSSEStream(data.request_id, typingEl);
 
     } catch (err) {
       replaceTypingWithError(typingEl, err);
@@ -131,7 +194,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function setSendingState(on) {
     isSending = on;
     messageInput.disabled = on;
-    chatForm.querySelector("button[type='submit']").disabled = on;
+    const submitBtn = chatForm.querySelector("button[type='submit']");
+    if (submitBtn) submitBtn.disabled = on;
     if (!on) messageInput.focus();
   }
 
@@ -168,12 +232,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return messageDiv;
   }
 
-  function replaceTypingWithAnswer(typingMessageDiv, answerText) {
-    const bubble = typingMessageDiv.querySelector('.bubble');
-    bubble.innerHTML = parseMarkdown(answerText);
-    scrollToBottom();
-  }
-
   function appendModeUsed(typingMessageDiv, modeUsed) {
     if (!modeUsed) return;
     const bubble = typingMessageDiv.querySelector('.bubble');
@@ -198,6 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chatArea.scrollTop = chatArea.scrollHeight;
   }
 
+  // ---------- MARKDOWN + XSS SAFETY ----------
   function parseMarkdown(text) {
     let safeText = escapeHtml(text);
     safeText = safeText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
