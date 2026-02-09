@@ -40,7 +40,7 @@ async def stream_rag_sse(
     query: str,
     mode: str,
     request: Request,
-    delay_s: float = 0.01,
+    delay_s: float = 0.07,
 ) -> AsyncGenerator[bytes, None]:
     """
     Streams a RAG answer over SSE.
