@@ -35,27 +35,21 @@ class PromptBuilder:
         out, total = [], 0
         for r in retrieved:
             source = r.get("source", "")
-            chunk_id = r.get("chunk_id", "")
+            text = r.get("text", "")
             
             # Extract just the filename
             filename = source.split("/")[-1] if source else "unknown"
             
-            # Extract just the chunk number from chunk_id (e.g., "lstm.pdf::fixed::chunk24" -> "24")
-            chunk_num = "?"
-            if "::" in chunk_id:
-                parts = chunk_id.split("::")
-                last_part = parts[-1]
-                if last_part.startswith("chunk"):
-                    chunk_num = last_part.replace("chunk", "")
+            # Format context block WITHOUT chunk_id in the context itself
+            # This prevents the LLM from seeing and repeating it
+            header = f'[SOURCE: {filename}]\n'
+            block = header + text + "\n"
             
-            header = (
-                f'[SOURCE: {filename} (chunk {chunk_num})]'
-            )
-            block = header + "\n" + r["text"] + "\n"
             if total + len(block) > max_chars:
                 break
             out.append(block)
             total += len(block)
+        
         return "\n".join(out).strip()
 
     def build_prompt(self, query: str, retrieved) -> str:
