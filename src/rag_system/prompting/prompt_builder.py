@@ -34,11 +34,24 @@ class PromptBuilder:
     def build_context(self, retrieved, max_chars: int = 4500) -> str:
         out, total = [], 0
         for r in retrieved:
+            source = r.get("source", "")
+            chunk_id = r.get("chunk_id", "")
+            
+            # Extract just the filename
+            filename = source.split("/")[-1] if source else "unknown"
+            
+            # Extract just the chunk number from chunk_id (e.g., "lstm.pdf::fixed::chunk24" -> "24")
+            chunk_num = "?"
+            if "::" in chunk_id:
+                parts = chunk_id.split("::")
+                last_part = parts[-1]
+                if last_part.startswith("chunk"):
+                    chunk_num = last_part.replace("chunk", "")
+            
             header = (
-                f'[SOURCE: {os.path.basename(r["source"])} | {r["chunk_id"]} | '
-                f'strategy={r.get("strategy")} | bm25_rank={r.get("bm25_rank")} | dense_rank={r.get("dense_rank")}]\n'
+                f'[SOURCE: {filename} (chunk {chunk_num})]'
             )
-            block = header + r["text"] + "\n"
+            block = header + "\n" + r["text"] + "\n"
             if total + len(block) > max_chars:
                 break
             out.append(block)

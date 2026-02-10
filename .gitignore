@@ -18,6 +18,13 @@ wheels/
 artifacts/
 data/processed/
 
+# Ignore SQLite database files but keep the Python module
+webapp/db/*.db
+
+
+
+
+
 
 
 

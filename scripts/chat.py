@@ -8,7 +8,7 @@ from rag_system.prompting.prompt_builder import PromptBuilder
 from rag_system.llm.gemini_gemma import GemmaClient
 from rag_system.app.pipeline import RAGPipeline
 
-VALID_MODES = {"fixed", "semantic", "both", "auto"}
+VALID_MODES = {"fixed", "semantic", "auto"}
 
 def ask_mode(default_mode: str) -> str:
     m = input(f"Choose chunking mode [{default_mode}] (fixed/semantic/both/auto): ").strip().lower()
