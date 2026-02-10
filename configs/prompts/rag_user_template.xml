@@ -2,5 +2,5 @@
 <prompt>
     <context>{context}</context>
     <question>{question}</question>
-    <instructions>Write a clear answer with citations like (PDF, chunk_id).</instructions>
+    <instructions>Write a clear answer with citations like (PDF).</instructions>
 </prompt>
