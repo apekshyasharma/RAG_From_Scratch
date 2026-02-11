@@ -11,3 +11,10 @@ requests
 regex
 pytest
 ruff
+fastapi
+uvicorn[standard]
+pydantic
+jinja2
+aiofiles
+pydantic-settings
+
