@@ -8,10 +8,10 @@ from rag_system.prompting.prompt_builder import PromptBuilder
 from rag_system.llm.gemini_gemma import GemmaClient
 from rag_system.app.pipeline import RAGPipeline
 
-VALID_MODES = {"fixed", "semantic", "auto"}
+VALID_MODES = {"fixed", "semantic", "auto"}  # Remove "both"
 
 def ask_mode(default_mode: str) -> str:
-    m = input(f"Choose chunking mode [{default_mode}] (fixed/semantic/both/auto): ").strip().lower()
+    m = input(f"Choose chunking mode [{default_mode}] (fixed/semantic/auto): ").strip().lower()
     if not m:
         return default_mode
     if m not in VALID_MODES:
@@ -40,7 +40,7 @@ def main():
 
     print("\n Hybrid RAG Chat Ready")
     print("Commands:")
-    print("  /mode fixed|semantic|both|auto   -> switch search mode")
+    print("  /mode fixed|semantic|auto   -> switch search mode")
     print("  /exit                           -> quit")
 
     while True:
@@ -56,7 +56,7 @@ def main():
                 mode = parts[1].lower()
                 print("Mode switched to:", mode)
             else:
-                print("Usage: /mode fixed|semantic|both|auto")
+                print("Usage: /mode fixed|semantic|auto")
             continue
 
         result = pipeline.answer(q, mode=mode)
