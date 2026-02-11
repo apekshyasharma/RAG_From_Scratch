@@ -4,7 +4,7 @@ A Retrieval-Augmented Generation (RAG) system that combines **semantic and lexic
 
 ![AI Scholar Interface](screenshots/image.png)
 
-## 🎯 Overview
+## Overview
 
 **AI Scholar** enables users to query a curated corpus of machine learning research papers through an interactive web interface. The system uses:
 
@@ -15,7 +15,7 @@ A Retrieval-Augmented Generation (RAG) system that combines **semantic and lexic
 - **Rate limiting**: Per-session and per-IP sliding-window enforcement
 - **Async I/O**: Non-blocking logging queue and thread-pooled RAG inference
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#-overview)
 - [Quick Start](#-quick-start)
@@ -37,7 +37,7 @@ A Retrieval-Augmented Generation (RAG) system that combines **semantic and lexic
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -87,7 +87,7 @@ Visit **http://localhost:8000** in your browser.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ### System Flow
 
@@ -122,7 +122,7 @@ Response streamed to browser
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Option A: Development Install
 
@@ -152,7 +152,7 @@ pydantic>=2.12.5
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### `configs/default.yaml`
 
@@ -201,7 +201,7 @@ LOG_LEVEL=INFO
 
 ---
 
-## 💻 Usage
+## Usage
 
 ### Building Indexes
 
@@ -380,7 +380,7 @@ Health check endpoint.
 
 ---
 
-## 📊 Performance
+## Performance
 
 ### Benchmark (single instance, no optimization)
 
