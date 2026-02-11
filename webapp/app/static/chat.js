@@ -1,120 +1,275 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Elements ---
-    const htmlElement = document.documentElement;
-    const chatForm = document.getElementById('chatForm');
-    const messageInput = document.getElementById('messageInput');
-    const chatArea = document.getElementById('chatArea');
-    const themeBtns = document.querySelectorAll('[data-set-theme]');
-    const parallaxBg = document.querySelector('.parallax-bg');
+  const htmlElement = document.documentElement;
+  const chatForm = document.getElementById('chatForm');
+  const messageInput = document.getElementById('messageInput');
+  const chatArea = document.getElementById('chatArea');
+  const themeBtns = document.querySelectorAll('[data-set-theme]');
 
-    // --- State ---
-    let currentTheme = localStorage.getItem('theme') || 'dark';
+  let currentTheme = localStorage.getItem('theme') || 'dark';
+  let isSending = false;
 
-    // --- Initialization ---
-    setTheme(currentTheme);
+  const SESSION_KEY = "rag_session_id";
+  let sessionId = localStorage.getItem(SESSION_KEY);
+  if (!sessionId) {
+    sessionId = (crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).toString();
+    localStorage.setItem(SESSION_KEY, sessionId);
+  }
 
-    // --- Theme Switcher ---
-    themeBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const newTheme = btn.getAttribute('data-set-theme');
-            setTheme(newTheme);
-        });
+  // pending query waiting for mode selection
+  let pendingQuery = null;
+
+  // Track current active SSE stream (so we can stop/cleanup if needed)
+  let activeEventSource = null;
+
+  setTheme(currentTheme);
+
+  themeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const newTheme = btn.getAttribute('data-set-theme');
+      setTheme(newTheme);
+    });
+  });
+
+  function setTheme(theme) {
+    htmlElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    currentTheme = theme;
+  }
+
+  // ---------- SUBMIT HANDLER ----------
+  chatForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = messageInput.value.trim();
+    if (!text || isSending) return;
+
+    // Add user message immediately
+    addMessage(text, 'user');
+    messageInput.value = '';
+
+    // Ask for chunking strategy
+    pendingQuery = text;
+    addChunkingChoiceMessage();
+  });
+
+  // ---------- BACKEND CALL (Step 3) ----------
+  // POST /api/message now returns { session_id, request_id }
+  async function callBackendForRequestId(message, mode) {
+    const res = await fetch("/api/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, message, mode })
     });
 
-    function setTheme(theme) {
-        htmlElement.setAttribute('data-theme', theme);
-        localStorage.setItem('theme', theme);
-        currentTheme = theme;
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errText}`);
     }
+    return await res.json(); // { session_id, request_id }
+  }
 
-    // --- Parallax Effect ---
-    // Optimizing with requestAnimationFrame to prevent jank
-    let mouseX = 0.5;
-    let mouseY = 0.5;
-    let targetMouseX = 0.5;
-    let targetMouseY = 0.5;
+  // ---------- SSE STREAM ----------
+  // GET /api/stream?session_id=...&request_id=...
+  function openSSEStream(requestId, typingMessageDiv) {
+    return new Promise((resolve, reject) => {
+      // Close any existing stream
+      if (activeEventSource) {
+        try { activeEventSource.close(); } catch {}
+        activeEventSource = null;
+      }
 
-    window.addEventListener('mousemove', (e) => {
-        // Normalize mouse position (0 to 1)
-        targetMouseX = e.clientX / window.innerWidth;
-        targetMouseY = e.clientY / window.innerHeight;
+      const url =
+        `/api/stream?session_id=${encodeURIComponent(sessionId)}` +
+        `&request_id=${encodeURIComponent(requestId)}`;
+
+      const es = new EventSource(url);
+      activeEventSource = es;
+
+      const bubble = typingMessageDiv.querySelector('.bubble');
+      bubble.textContent = ""; // prepare for streaming (use textContent for speed)
+      let acc = "";
+
+      const closeStream = () => {
+        try { es.close(); } catch {}
+        if (activeEventSource === es) activeEventSource = null;
+      };
+
+      es.addEventListener("token", (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          const piece = data.text || "";
+          acc += piece;
+          // Use textContent for instant rendering during streaming
+          bubble.textContent = acc;
+          scrollToBottom();
+        } catch {
+          // ignore malformed event chunk
+        }
+      });
+
+      es.addEventListener("done", (ev) => {
+        closeStream();
+        // After done, apply markdown formatting once
+        bubble.innerHTML = parseMarkdown(acc);
+        try {
+          const data = JSON.parse(ev.data);
+          if (data?.mode_used) appendModeUsed(typingMessageDiv, data.mode_used);
+        } catch {}
+        scrollToBottom();
+        resolve();
+      });
+
+      // EventSource "error" sometimes fires on disconnect. Treat as failure.
+      es.addEventListener("error", () => {
+        closeStream();
+        reject(new Error("Streaming failed or connection dropped."));
+      });
     });
+  }
 
-    function updateParallax() {
-        // Smooth interpolation
-        mouseX += (targetMouseX - mouseX) * 0.1;
-        mouseY += (targetMouseY - mouseY) * 0.1;
+  // ---------- MODE CHOICE UI ----------
+  function addChunkingChoiceMessage() {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'bot');
 
-        htmlElement.style.setProperty('--mouse-x', mouseX);
-        htmlElement.style.setProperty('--mouse-y', mouseY);
+    const bubble = document.createElement('div');
+    bubble.classList.add('bubble');
 
-        requestAnimationFrame(updateParallax);
-    }
+    bubble.innerHTML = `
+      <div style="font-weight:600; margin-bottom:8px;">Choose a chunking strategy for retrieval:</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="mode-btn" data-mode="fixed" type="button">Fixed-size (overlap)</button>
+        <button class="mode-btn" data-mode="semantic" type="button">Semantic (sections + overlap)</button>
+        <button class="mode-btn" data-mode="auto" type="button">Auto (system decides)</button>
+      </div>
+      <div style="opacity:.75; margin-top:8px; font-size:12px;">
+        Fixed is best for exact quotes/formulas, Semantic is best for sections/ideas.
+      </div>
+    `;
 
-    updateParallax();
+    messageDiv.appendChild(bubble);
+    chatArea.appendChild(messageDiv);
+    scrollToBottom();
 
-    // --- Chat Logic ---
-    chatForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const text = messageInput.value.trim();
-        if (!text) return;
-
-        // 1. Add User Message
-        addMessage(text, 'user');
-        messageInput.value = '';
-
-        // 2. Simulate Bot Response
-        setTimeout(() => {
-            const botResponse = generateBotResponse(text);
-            addMessage(botResponse, 'bot');
-        }, 600);
+    bubble.querySelectorAll(".mode-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const mode = btn.dataset.mode;
+        await handleModeSelection(mode, messageDiv);
+      });
     });
+  }
 
-    function addMessage(text, sender) {
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message', sender);
+  // ---------- UPDATED for Step 3 Streaming ----------
+  async function handleModeSelection(mode, choiceMessageDiv) {
+    if (!pendingQuery) return;
 
-        const bubble = document.createElement('div');
-        bubble.classList.add('bubble');
+    // Disable buttons to prevent double click
+    choiceMessageDiv.querySelectorAll(".mode-btn").forEach(b => b.disabled = true);
 
-        // Render Markdown
-        bubble.innerHTML = parseMarkdown(text);
+    const bubble = choiceMessageDiv.querySelector(".bubble");
+    const confirm = document.createElement("div");
+    confirm.style.marginTop = "10px";
+    confirm.style.opacity = "0.85";
+    confirm.innerHTML = `✅ Selected: <b>${escapeHtml(mode)}</b>. Streaming response...`;
+    bubble.appendChild(confirm);
 
-        messageDiv.appendChild(bubble);
-        chatArea.appendChild(messageDiv);
+    // Assistant typing placeholder
+    const typingEl = addTypingMessage();
+    setSendingState(true);
 
-        // Auto-scroll
-        chatArea.scrollTop = chatArea.scrollHeight;
+    try {
+      // 1) Get request_id from backend
+      const data = await callBackendForRequestId(pendingQuery, mode);
+
+      // 2) Open SSE stream and render tokens into the same assistant bubble
+      await openSSEStream(data.request_id, typingEl);
+
+    } catch (err) {
+      replaceTypingWithError(typingEl, err);
+    } finally {
+      setSendingState(false);
+      pendingQuery = null;
     }
+  }
 
-    function parseMarkdown(text) {
-        // Escape HTML to prevent XSS (basic)
-        let safeText = text.replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
+  function setSendingState(on) {
+    isSending = on;
+    messageInput.disabled = on;
+    const submitBtn = chatForm.querySelector("button[type='submit']");
+    if (submitBtn) submitBtn.disabled = on;
+    if (!on) messageInput.focus();
+  }
 
-        // Bold: **text**
-        safeText = safeText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+  // ---------- UI HELPERS ----------
+  function addMessage(text, sender) {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', sender);
 
-        // Code: `text`
-        safeText = safeText.replace(/`(.*?)`/g, '<code>$1</code>');
+    const bubble = document.createElement('div');
+    bubble.classList.add('bubble');
+    bubble.innerHTML = parseMarkdown(text);
 
-        return safeText;
-    }
+    messageDiv.appendChild(bubble);
+    chatArea.appendChild(messageDiv);
+    scrollToBottom();
+    return messageDiv;
+  }
 
-    function generateBotResponse(userText) {
-        const lowerText = userText.toLowerCase();
-        if (lowerText.includes('hello') || lowerText.includes('hi')) {
-            return 'Hello there! Try switching the **theme**!';
-        }
-        if (lowerText.includes('theme')) {
-            return 'I like `purple` the best. What about you?';
-        }
-        if (lowerText.includes('code')) {
-            return 'Here is some code: `console.log("Hello World")`';
-        }
-        return `You said: ${userText}`;
-    }
+  function addTypingMessage() {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', 'bot');
+
+    const bubble = document.createElement('div');
+    bubble.classList.add('bubble');
+    bubble.innerHTML = `
+      <span style="opacity:.8">Retrieving & generating</span>
+      <span class="typing-dots" aria-label="typing">
+        <span>.</span><span>.</span><span>.</span>
+      </span>
+    `;
+    messageDiv.appendChild(bubble);
+    chatArea.appendChild(messageDiv);
+    scrollToBottom();
+    return messageDiv;
+  }
+
+  function appendModeUsed(typingMessageDiv, modeUsed) {
+    if (!modeUsed) return;
+    const bubble = typingMessageDiv.querySelector('.bubble');
+    const meta = document.createElement("div");
+    meta.style.opacity = "0.7";
+    meta.style.fontSize = "12px";
+    meta.style.marginTop = "8px";
+    meta.textContent = `Mode used: ${modeUsed}`;
+    bubble.appendChild(meta);
+  }
+
+  function replaceTypingWithError(typingMessageDiv, err) {
+    const bubble = typingMessageDiv.querySelector('.bubble');
+    bubble.innerHTML = `
+      <b style="color:#ff8080">Error:</b>
+      <span style="color:#ffb3b3">${escapeHtml(String(err?.message || err))}</span>
+    `;
+    scrollToBottom();
+  }
+
+  function scrollToBottom() {
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  // ---------- MARKDOWN + XSS SAFETY ----------
+  function parseMarkdown(text) {
+    let safeText = escapeHtml(text);
+    safeText = safeText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    safeText = safeText.replace(/`(.*?)`/g, '<code>$1</code>');
+    return safeText;
+  }
+
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
 });
