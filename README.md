@@ -3,6 +3,7 @@
 A Retrieval-Augmented Generation (RAG) system that combines **semantic and lexical search** over research papers using FastAPI, SQLite, and Google's Gemma LLM.
 
 ![AI Scholar Interface](screenshots/image.png)
+![Chat Logs](screenshots/logs.png)
 
 ## Overview
 
