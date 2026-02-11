@@ -41,16 +41,34 @@ async def message(req: ChatRequest, request: Request):
     """
     _ensure_state(request.app)
 
+    # ---- Rate limiting----
+    limiter = getattr(request.app.state, "rate_limiter", None)
+    if limiter:
+        ip = request.client.host if request.client else None
+        allowed, reason = await limiter.check(req.session_id, ip)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=reason)
+
     request_id = str(uuid.uuid4())
 
     payload = {
         "session_id": req.session_id,
         "query": req.message,
         "mode": req.mode,
+        "request_id": request_id,
     }
 
     async with request.app.state.pending_lock:
         request.app.state.pending_requests[request_id] = payload
+
+    # ---- Logging (non-blocking) ----
+    log = getattr(request.app.state, "log_service", None)
+    if log:
+        ua = request.headers.get("user-agent")
+        ip = request.client.host if request.client else None
+        await log.log_session(req.session_id, ua, ip)
+        await log.log_user_message(req.session_id, req.message)
+        await log.log_request_started(request_id, req.session_id, req.message, req.mode)
 
     return ChatAccepted(session_id=req.session_id, request_id=request_id)
 
@@ -75,8 +93,9 @@ async def stream(session_id: str, request_id: str, request: Request):
     if payload["session_id"] != session_id:
         raise HTTPException(status_code=403, detail="session_id mismatch")
 
-    # Get pipeline from startup
+    # Get pipeline and logger from startup
     rag = request.app.state.rag_pipeline
+    log = getattr(request.app.state, "log_service", None)
 
     async def event_generator():
         # stream_rag_sse yields properly formatted SSE bytes
@@ -85,6 +104,9 @@ async def stream(session_id: str, request_id: str, request: Request):
             query=payload["query"],
             mode=payload["mode"],
             request=request,
+            log_service=log,
+            session_id=session_id,
+            request_id=request_id,
         ):
             yield chunk
 

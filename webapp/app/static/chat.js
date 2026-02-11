@@ -46,12 +46,29 @@ document.addEventListener('DOMContentLoaded', () => {
     addMessage(text, 'user');
     messageInput.value = '';
 
-    // Ask for chunking strategy
-    pendingQuery = text;
-    addChunkingChoiceMessage();
+    // Get selected mode from UI (default to auto if not found)
+    const modeSelect = document.getElementById('modeSelect');
+    const mode = modeSelect ? modeSelect.value : 'auto';
+
+    // Show persistent typing indicator
+    const typingMsgDiv = addTypingMessage();
+    setSendingState(true);
+
+    try {
+      // 1) Get request_id from backend
+      const data = await callBackendForRequestId(text, mode);
+
+      // 2) Open SSE stream (typing indicator remains until first token)
+      await openSSEStream(data.request_id, typingMsgDiv);
+
+    } catch (err) {
+      replaceTypingWithError(typingMsgDiv, err);
+    } finally {
+      setSendingState(false);
+    }
   });
 
-  // ---------- BACKEND CALL (Step 3) ----------
+  // ---------- BACKEND CALL ----------
   // POST /api/message now returns { session_id, request_id }
   async function callBackendForRequestId(message, mode) {
     const res = await fetch("/api/message", {
@@ -85,7 +102,8 @@ document.addEventListener('DOMContentLoaded', () => {
       activeEventSource = es;
 
       const bubble = typingMessageDiv.querySelector('.bubble');
-      bubble.textContent = ""; // prepare for streaming (use textContent for speed)
+      // It will represent the loading state until the first token overwrites it.
+      
       let acc = "";
 
       const closeStream = () => {
@@ -98,7 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
           const data = JSON.parse(ev.data);
           const piece = data.text || "";
           acc += piece;
-          // Use textContent for instant rendering during streaming
+          // Use textContent for instant rendering.
+          // This naturally overwrites the "Thinking..." HTML on the first chunk.
           bubble.textContent = acc;
           scrollToBottom();
         } catch {
@@ -169,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const confirm = document.createElement("div");
     confirm.style.marginTop = "10px";
     confirm.style.opacity = "0.85";
-    confirm.innerHTML = `✅ Selected: <b>${escapeHtml(mode)}</b>. Streaming response...`;
+    confirm.innerHTML = `Selected: <b>${escapeHtml(mode)}</b>. Streaming response...`;
     bubble.appendChild(confirm);
 
     // Assistant typing placeholder

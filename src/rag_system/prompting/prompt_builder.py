@@ -34,15 +34,22 @@ class PromptBuilder:
     def build_context(self, retrieved, max_chars: int = 4500) -> str:
         out, total = [], 0
         for r in retrieved:
-            header = (
-                f'[SOURCE: {os.path.basename(r["source"])} | {r["chunk_id"]} | '
-                f'strategy={r.get("strategy")} | bm25_rank={r.get("bm25_rank")} | dense_rank={r.get("dense_rank")}]\n'
-            )
-            block = header + r["text"] + "\n"
+            source = r.get("source", "")
+            text = r.get("text", "")
+            
+            # Extract just the filename
+            filename = source.split("/")[-1] if source else "unknown"
+            
+            # Format context block WITHOUT chunk_id in the context itself
+            # This prevents the LLM from seeing and repeating it
+            header = f'[SOURCE: {filename}]\n'
+            block = header + text + "\n"
+            
             if total + len(block) > max_chars:
                 break
             out.append(block)
             total += len(block)
+        
         return "\n".join(out).strip()
 
     def build_prompt(self, query: str, retrieved) -> str:

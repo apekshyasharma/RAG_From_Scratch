@@ -17,4 +17,4 @@ pydantic
 jinja2
 aiofiles
 pydantic-settings
-
+aiosqlite

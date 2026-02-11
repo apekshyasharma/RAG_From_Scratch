@@ -2,26 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import AsyncGenerator
+import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import AsyncGenerator, Optional
 
 from fastapi import Request
 
+# Thread pool for CPU-bound RAG operations
+_executor = ThreadPoolExecutor(max_workers=4)
+
 
 def _sse(event: str, data: dict) -> bytes:
-    """
-    Format SSE event payload as bytes:
-      event: <event>\n
-      data: <json>\n\n
-    """
     payload = f"event: {event}\n" + f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
     return payload.encode("utf-8")
 
 
 def _chunk_text_words(text: str, words_per_chunk: int = 1):
-    """
-    Stream output like tokens (word-by-word).
-    words_per_chunk=1 => true "word-by-word" feel.
-    """
     if not text:
         return
     words = text.split(" ")
@@ -32,7 +28,7 @@ def _chunk_text_words(text: str, words_per_chunk: int = 1):
             yield " ".join(buf) + " "
             buf = []
     if buf:
-        yield " ".join(buf)
+        yield " ".join(buf) + " "
 
 
 async def stream_rag_sse(
@@ -40,37 +36,48 @@ async def stream_rag_sse(
     query: str,
     mode: str,
     request: Request,
+    log_service: Optional[object] = None,
+    session_id: Optional[str] = None,
+    request_id: Optional[str] = None,
     delay_s: float = 0.07,
 ) -> AsyncGenerator[bytes, None]:
-    """
-    Streams a RAG answer over SSE.
+    t0 = time.perf_counter()
+    answer_text = ""
+    mode_used = mode
 
-    Current version:
-    - calls rag.answer(...) once (non-stream LLM)
-    - then streams the final text word-by-word ("token" events)
-
-    Later upgrade:
-    - if LLM supports true streaming, replace the fallback chunking
-      with actual token streaming from the model.
-    """
     try:
-        # If client disconnects early, stop work ASAP
         if await request.is_disconnected():
             return
 
-        # (1) Run full RAG once
-        result = rag.answer(query=query, mode=mode)
-        text = result.answer or ""
+        # Run blocking RAG in thread pool to avoid blocking the event loop
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            _executor,
+            lambda: rag.answer(query=query, mode=mode)
+        )
+        answer_text = result.answer or ""
+        mode_used = getattr(result, "mode_used", mode)
 
-        # (2) Stream "token" chunks (word-by-word)
-        for piece in _chunk_text_words(text, words_per_chunk=1):
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+
+        # Log assistant message + request completed (non-blocking)
+        if log_service and session_id and request_id:
+            await log_service.log_assistant_message(session_id, answer_text)
+            await log_service.log_request_completed(request_id, mode_used, latency_ms)
+
+        # Stream word-by-word
+        for piece in _chunk_text_words(answer_text, words_per_chunk=1):
             if await request.is_disconnected():
                 return
             yield _sse("token", {"text": piece})
             await asyncio.sleep(delay_s)
 
-        # (3) Done
-        yield _sse("done", {"ok": True, "mode_used": result.mode_used})
+        yield _sse("done", {"ok": True, "mode_used": mode_used})
 
     except Exception as e:
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+
+        if log_service and request_id:
+            await log_service.log_request_error(request_id, str(e), latency_ms)
+
         yield _sse("error", {"message": str(e)})

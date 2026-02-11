@@ -1,4 +1,3 @@
-# webapp/app/routes/pages.py
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates

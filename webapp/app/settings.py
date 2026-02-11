@@ -1,7 +1,6 @@
-# webapp/app/settings.py
 from dataclasses import dataclass
 from pathlib import Path
-import os
+
 
 @dataclass(frozen=True)
 class WebSettings:
@@ -11,10 +10,8 @@ class WebSettings:
 
     @staticmethod
     def load() -> "WebSettings":
-        # rag/webapp/app/settings.py -> rag/webapp/app -> rag/webapp -> rag/
-        root = Path(__file__).resolve().parents[2]
-        # Go up one more level since we're in webapp/app/
-        root = root.parent  # Now at rag/
+        # webapp/app/settings.py -> webapp/app -> webapp -> rag/
+        root = Path(__file__).resolve().parent.parent.parent
         return WebSettings(
             project_root=root,
             configs_dir=root / "configs",
