@@ -1,8 +1,10 @@
 # AI Scholar — Hybrid RAG Chatbot
 
-A production-ready Retrieval-Augmented Generation (RAG) system that combines **semantic and lexical search** over Machine Learning research papers using FastAPI, SQLite, and Google's Gemma LLM.
+A Retrieval-Augmented Generation (RAG) system that combines **semantic and lexical search** over research papers using FastAPI, SQLite, and Google's Gemma LLM.
 
-## Overview
+![AI Scholar Interface](screenshots/image.png)
+
+## 🎯 Overview
 
 **AI Scholar** enables users to query a curated corpus of machine learning research papers through an interactive web interface. The system uses:
 
@@ -13,27 +15,29 @@ A production-ready Retrieval-Augmented Generation (RAG) system that combines **s
 - **Rate limiting**: Per-session and per-IP sliding-window enforcement
 - **Async I/O**: Non-blocking logging queue and thread-pooled RAG inference
 
-## Table of Contents
+## 📋 Table of Contents
 
-- [Quick Start](#quick-start)
-- [Architecture](#architecture)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Usage](#usage)
+- [Overview](#-overview)
+- [Quick Start](#-quick-start)
+- [Architecture](#%EF%B8%8F-architecture)
+- [Installation](#-installation)
+- [Configuration](#%EF%B8%8F-configuration)
+- [Usage](#-usage)
   - [Building Indexes](#building-indexes)
   - [Running the Web Service](#running-the-web-service)
   - [CLI Mode](#cli-mode)
   - [Admin Dashboard](#admin-dashboard)
-- [Project Structure](#project-structure)
-- [API Reference](#api-reference)
-- [Performance](#performance)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
+- [Project Structure](#-project-structure)
+- [API Reference](#-api-reference)
+- [Performance](#-performance)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Support](#-support)
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
@@ -118,7 +122,7 @@ Response streamed to browser
 
 ---
 
-## Installation
+## 📦 Installation
 
 ### Option A: Development Install
 
@@ -197,7 +201,7 @@ LOG_LEVEL=INFO
 
 ---
 
-## Usage
+## 💻 Usage
 
 ### Building Indexes
 
@@ -287,7 +291,7 @@ http://localhost:8000/admin/logs/json  # JSON API export
 
 ---
 
-## API Reference
+## 🔌 API Reference
 
 ### POST /api/message
 
@@ -376,7 +380,7 @@ Health check endpoint.
 
 ---
 
-## Performance
+## 📊 Performance
 
 ### Benchmark (single instance, no optimization)
 
@@ -437,7 +441,7 @@ faiss:
 
 ### Rate limit errors (HTTP 429)
 
-Current limits per `webapp/app/main.py`:
+Current limits per [`webapp/app/main.py`](webapp/app/main.py):
 - Per session: 12 requests / 60 seconds
 - Per IP: 60 requests / 3600 seconds
 
@@ -453,32 +457,6 @@ lsof artifacts/chatlogs.sqlite3
 # Or reset
 rm artifacts/chatlogs.sqlite3*
 uvicorn webapp.app.main:app --reload
-```
-
----
-
-## Contributing
-
-1. Fork the repo
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Commit: `git commit -m "Add my feature"`
-4. Push: `git push origin feature/my-feature`
-5. Open a Pull Request
-
-### Code Style
-
-```bash
-# Format
-ruff format .
-
-# Lint
-ruff check .
-```
-
-### Testing
-
-```bash
-pytest tests/
 ```
 
 ---
@@ -501,6 +479,9 @@ rag/
 │
 ├── data/
 │   └── raw_pdfs/              # Place PDF files here
+│
+├── image/
+│   └── screenshots.png        # UI screenshot
 │
 ├── scripts/
 │   ├── build_index.py         # Ingest PDFs → build indexes
@@ -573,16 +554,6 @@ rag/
 ## License
 
 This project is licensed under the **MIT License** — see [LICENSE](LICENSE) file for details.
-
----
-
-## Support
-
-For issues, feature requests, or questions:
-
-1. Check [Troubleshooting](#troubleshooting) section
-2. Open a GitHub issue with detailed logs
-3. Email: (maintainer email)
 
 ---
 

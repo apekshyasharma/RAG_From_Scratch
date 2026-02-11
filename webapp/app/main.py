@@ -25,7 +25,7 @@ from rag_system.app.pipeline import RAGPipeline
 
 def create_app() -> FastAPI:
     app = FastAPI(title="RAG Chatbot", version="0.1.0")
--
+
     # Configure allowed origins with CORS Middleware for deployment
     # For development: allow localhost variants
     # For production: replace with actual domain
