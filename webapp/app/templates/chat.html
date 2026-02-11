@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Interface</title>
+    <link rel="stylesheet" href="/static/chat.css">
+</head>
+
+<body>
+    <div class="parallax-bg"></div>
+    <div class="app-container">
+        <header class="chat-header">
+            <h1>Chat</h1>
+            <div class="theme-switcher">
+                <button class="theme-btn" data-set-theme="dark" title="Dark Theme">🌙</button>
+                <button class="theme-btn" data-set-theme="purple" title="Purple Theme">💜</button>
+                <button class="theme-btn" data-set-theme="teal" title="Teal Theme">💠</button>
+            </div>
+        </header>
+        <div class="chat-area" id="chatArea">
+            <div class="message bot">
+                <div class="bubble">Hello! I'm your chat assistant. You can try **bold** text or `code` blocks!</div>
+            </div>
+        </div>
+        <form class="input-area" id="chatForm">
+            <input type="text" id="messageInput" placeholder="Type a message..." autocomplete="off">
+            <button type="submit">Send</button>
+        </form>
+    </div>
+    <script src="/static/chat.js"></script>
+</body>
+
+</html>
