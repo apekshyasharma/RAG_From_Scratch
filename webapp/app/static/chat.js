@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ---------- BACKEND CALL (Step 3) ----------
+  // ---------- BACKEND CALL ----------
   // POST /api/message now returns { session_id, request_id }
   async function callBackendForRequestId(message, mode) {
     const res = await fetch("/api/message", {
@@ -102,7 +102,6 @@ document.addEventListener('DOMContentLoaded', () => {
       activeEventSource = es;
 
       const bubble = typingMessageDiv.querySelector('.bubble');
-      // Removed: bubble.textContent = ""; <-- FIX: Do not clear "Thinking..." yet! 
       // It will represent the loading state until the first token overwrites it.
       
       let acc = "";
@@ -189,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const confirm = document.createElement("div");
     confirm.style.marginTop = "10px";
     confirm.style.opacity = "0.85";
-    confirm.innerHTML = `✅ Selected: <b>${escapeHtml(mode)}</b>. Streaming response...`;
+    confirm.innerHTML = `Selected: <b>${escapeHtml(mode)}</b>. Streaming response...`;
     bubble.appendChild(confirm);
 
     // Assistant typing placeholder

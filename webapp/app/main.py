@@ -25,11 +25,10 @@ from rag_system.app.pipeline import RAGPipeline
 
 def create_app() -> FastAPI:
     app = FastAPI(title="RAG Chatbot", version="0.1.0")
-
-    # ---- CORS Middleware ----
-    # Configure allowed origins for your deployment
+-
+    # Configure allowed origins with CORS Middleware for deployment
     # For development: allow localhost variants
-    # For production: replace with your actual domain(s)
+    # For production: replace with actual domain
     origins = [
         "http://localhost",
         "http://localhost:8000",
@@ -37,9 +36,9 @@ def create_app() -> FastAPI:
         "http://127.0.0.1",
         "http://127.0.0.1:8000",
         "http://127.0.0.1:3000",
-        # Add your production domain(s) here:
-        # "https://yourdomain.com",
-        # "https://www.yourdomain.com",
+        # Add your production domain here:
+        # "https://productiondomain.com",
+        # "https://www.productiondomain.com",
     ]
 
     app.add_middleware(
@@ -49,7 +48,7 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
         expose_headers=["*"],
-        max_age=600,  # Cache preflight requests for 10 minutes
+        max_age=600, 
     )
 
     app.mount("/static", StaticFiles(directory="webapp/app/static"), name="static")
@@ -78,7 +77,7 @@ def create_app() -> FastAPI:
         app.state.log_service = LogService(cfg)
         await app.state.log_service.start()
 
-        # Rate limiter (tune these later)
+        # Rate limiter 
         app.state.rate_limiter = RateLimiter(
             per_session=RateLimitRule(max_requests=12, window_seconds=60),  # 12/min per session
             per_ip=RateLimitRule(max_requests=60, window_seconds=3600),     # 60/hour per IP

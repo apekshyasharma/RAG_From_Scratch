@@ -41,7 +41,7 @@ async def message(req: ChatRequest, request: Request):
     """
     _ensure_state(request.app)
 
-    # ---- Rate limiting (enforced here) ----
+    # ---- Rate limiting----
     limiter = getattr(request.app.state, "rate_limiter", None)
     if limiter:
         ip = request.client.host if request.client else None

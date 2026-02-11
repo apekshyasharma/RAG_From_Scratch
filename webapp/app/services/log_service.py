@@ -125,7 +125,7 @@ class LogService:
                 await self._handle(db, ev)
                 await db.commit()
             except Exception as e:
-                # Log error for debugging (remove in production if too noisy)
+                # Log error for debugging 
                 print(f"[LogService] DB write error: {e}")
             finally:
                 self.queue.task_done()
